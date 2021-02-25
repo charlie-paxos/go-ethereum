@@ -536,7 +536,19 @@ func (jst *Tracer) CaptureState(env *vm.EVM, pc uint64, op vm.OpCode, gas, cost 
 	if jst.err == nil {
 		// Initialize the context if it wasn't done yet
 		if !jst.inited {
-			jst.ctx["block"] = env.BlockNumber.Uint64()
+			jst.ctx["block"] = env.Context.BlockNumber.Uint64()
+			// Compute intrinsic gas
+			isHomestead := env.ChainConfig().IsHomestead(env.Context.BlockNumber)
+			isIstanbul := env.ChainConfig().IsIstanbul(env.Context.BlockNumber)
+			var input []byte
+			if data, ok := jst.ctx["input"].([]byte); ok {
+				input = data
+			}
+			intrinsicGas, err := core.IntrinsicGas(input, nil, jst.ctx["type"] == "CREATE", isHomestead, isIstanbul)
+			if err != nil {
+				return err
+			}
+			jst.ctx["intrinsicGas"] = intrinsicGas
 			jst.inited = true
 		}
 		// If tracing was interrupted, set the error and stop

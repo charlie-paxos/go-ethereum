@@ -335,3 +335,188 @@ func TestChainID(t *testing.T) {
 		t.Fatalf("ChainID returned wrong number: %+v", id)
 	}
 }
+
+func testGetBlock(t *testing.T, client *rpc.Client) {
+	ec := NewClient(client)
+	// Get current block number
+	blockNumber, err := ec.BlockNumber(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if blockNumber != 1 {
+		t.Fatalf("BlockNumber returned wrong number: %d", blockNumber)
+	}
+	// Get current block by number
+	block, err := ec.BlockByNumber(context.Background(), new(big.Int).SetUint64(blockNumber))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if block.NumberU64() != blockNumber {
+		t.Fatalf("BlockByNumber returned wrong block: want %d got %d", blockNumber, block.NumberU64())
+	}
+	// Get current block by hash
+	blockH, err := ec.BlockByHash(context.Background(), block.Hash())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if block.Hash() != blockH.Hash() {
+		t.Fatalf("BlockByHash returned wrong block: want %v got %v", block.Hash().Hex(), blockH.Hash().Hex())
+	}
+	// Get header by number
+	header, err := ec.HeaderByNumber(context.Background(), new(big.Int).SetUint64(blockNumber))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if block.Header().Hash() != header.Hash() {
+		t.Fatalf("HeaderByNumber returned wrong header: want %v got %v", block.Header().Hash().Hex(), header.Hash().Hex())
+	}
+	// Get header by hash
+	headerH, err := ec.HeaderByHash(context.Background(), block.Hash())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if block.Header().Hash() != headerH.Hash() {
+		t.Fatalf("HeaderByHash returned wrong header: want %v got %v", block.Header().Hash().Hex(), headerH.Hash().Hex())
+	}
+}
+
+func testStatusFunctions(t *testing.T, client *rpc.Client) {
+	ec := NewClient(client)
+
+	// Sync progress
+	progress, err := ec.SyncProgress(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if progress != nil {
+		t.Fatalf("unexpected progress: %v", progress)
+	}
+	// NetworkID
+	networkID, err := ec.NetworkID(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if networkID.Cmp(big.NewInt(0)) != 0 {
+		t.Fatalf("unexpected networkID: %v", networkID)
+	}
+	// SuggestGasPrice (should suggest 1 Gwei)
+	gasPrice, err := ec.SuggestGasPrice(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gasPrice.Cmp(big.NewInt(1000000000)) != 0 {
+		t.Fatalf("unexpected gas price: %v", gasPrice)
+	}
+}
+
+func testCallContract(t *testing.T, client *rpc.Client) {
+	ec := NewClient(client)
+
+	// EstimateGas
+	msg := ethereum.CallMsg{
+		From:     testAddr,
+		To:       &common.Address{},
+		Gas:      21000,
+		GasPrice: big.NewInt(1),
+		Value:    big.NewInt(1),
+	}
+	gas, err := ec.EstimateGas(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gas != 21000 {
+		t.Fatalf("unexpected gas price: %v", gas)
+	}
+	// CallContract
+	if _, err := ec.CallContract(context.Background(), msg, big.NewInt(1)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// PendingCallCOntract
+	if _, err := ec.PendingCallContract(context.Background(), msg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func testAtFunctions(t *testing.T, client *rpc.Client) {
+	ec := NewClient(client)
+	// send a transaction for some interesting pending status
+	sendTransaction(ec)
+	time.Sleep(100 * time.Millisecond)
+	// Check pending transaction count
+	pending, err := ec.PendingTransactionCount(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pending != 1 {
+		t.Fatalf("unexpected pending, wanted 1 got: %v", pending)
+	}
+	// Query balance
+	balance, err := ec.BalanceAt(context.Background(), testAddr, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	penBalance, err := ec.PendingBalanceAt(context.Background(), testAddr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if balance.Cmp(penBalance) == 0 {
+		t.Fatalf("unexpected balance: %v %v", balance, penBalance)
+	}
+	// NonceAt
+	nonce, err := ec.NonceAt(context.Background(), testAddr, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	penNonce, err := ec.PendingNonceAt(context.Background(), testAddr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if penNonce != nonce+1 {
+		t.Fatalf("unexpected nonce: %v %v", nonce, penNonce)
+	}
+	// StorageAt
+	storage, err := ec.StorageAt(context.Background(), testAddr, common.Hash{}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	penStorage, err := ec.PendingStorageAt(context.Background(), testAddr, common.Hash{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(storage, penStorage) {
+		t.Fatalf("unexpected storage: %v %v", storage, penStorage)
+	}
+	// CodeAt
+	code, err := ec.CodeAt(context.Background(), testAddr, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	penCode, err := ec.PendingCodeAt(context.Background(), testAddr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(code, penCode) {
+		t.Fatalf("unexpected code: %v %v", code, penCode)
+	}
+}
+
+func sendTransaction(ec *Client) error {
+	// Retrieve chainID
+	chainID, err := ec.ChainID(context.Background())
+	if err != nil {
+		return err
+	}
+	// Create transaction
+	tx := types.NewTransaction(0, common.Address{1}, big.NewInt(1), 22000, big.NewInt(1), nil)
+	signer := types.LatestSignerForChainID(chainID)
+	signature, err := crypto.Sign(signer.Hash(tx).Bytes(), testKey)
+	if err != nil {
+		return err
+	}
+	signedTx, err := tx.WithSignature(signer, signature)
+	if err != nil {
+		return err
+	}
+	// Send transaction
+	return ec.SendTransaction(context.Background(), signedTx)
+}
